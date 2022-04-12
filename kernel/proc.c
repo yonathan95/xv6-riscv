@@ -13,7 +13,9 @@ struct proc proc[NPROC];
 struct proc *initproc;
 
 int nextpid = 1;
+int rate= 5;
 struct spinlock pid_lock;
+uint time_to = 0;
 
 extern void forkret(void);
 static void freeproc(struct proc *p);
@@ -164,6 +166,9 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+  p->mean_ticks = 0;
+  p->last_runnable_time = 0;
+  p->last_ticks = 0;
 }
 
 // Create a user page table for a given process,
@@ -427,6 +432,7 @@ wait(uint64 addr)
   }
 }
 
+
 // Per-CPU process scheduler.
 // Each CPU calls scheduler() after setting itself up.
 // Scheduler never returns.  It loops, doing:
@@ -435,7 +441,7 @@ wait(uint64 addr)
 //  - eventually that process transfers control
 //    via swtch back to the scheduler.
 void
-scheduler(void)
+default_scheduler(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
@@ -444,10 +450,12 @@ scheduler(void)
   for(;;){
     // Avoid deadlock by ensuring that devices can interrupt.
     intr_on();
-
+    acquire(&tickslock);
+    uint ticks0 = ticks;
+    release(&tickslock);
     for(p = proc; p < &proc[NPROC]; p++) {
       acquire(&p->lock);
-      if(p->state == RUNNABLE) {
+      if(p->state == RUNNABLE && ticks0 > time_to) {
         // Switch to chosen process.  It is the process's job
         // to release its lock and then reacquire it
         // before jumping back to us.
@@ -462,6 +470,125 @@ scheduler(void)
       release(&p->lock);
     }
   }
+}
+
+void
+fcfs_scheduler(void){
+  struct proc *p;
+  struct cpu *c = mycpu();
+  
+  c->proc = 0;
+  for(;;){
+    // Avoid deadlock by ensuring that devices can interrupt.
+    intr_on();
+
+    acquire(&tickslock);
+    uint ticks0 = ticks;
+    release(&tickslock);
+
+    int pid = -1;
+    uint lowest_runnable_time = __INT_MAX__;
+    int found = 0;
+
+    for(p = proc; p < &proc[NPROC]; p++) {
+      acquire(&p->lock);
+      if(p->state == RUNNABLE && ticks0 > time_to) {
+        if(p->last_runnable_time < lowest_runnable_time){
+          pid = p->pid;
+          lowest_runnable_time = p->last_runnable_time;
+          found = 1;
+        }
+        p->last_runnable_time = ticks0;
+      }
+      release(&p->lock);
+    }
+
+    if(found){
+      for(p = proc; p < &proc[NPROC]; p++){
+        acquire(&p->lock);
+        if(p->pid == pid){
+          p->state = RUNNING;
+          c->proc = p;
+          swtch(&c->context, &p->context);
+          // Process is done running for now.
+          // It should have changed its p->state before coming back.
+          c->proc = 0;
+        }
+        release(&p->lock);
+      }
+    }
+  }
+}
+
+void
+approx_sjf_scheduler(void){
+  struct proc *p;
+  struct cpu *c = mycpu();
+  
+  c->proc = 0;
+  for(;;){
+    // Avoid deadlock by ensuring that devices can interrupt.
+    intr_on();
+    acquire(&tickslock);
+    uint ticks0 = ticks;
+    release(&tickslock);
+
+    int pid = -1;
+    uint min_ticks = __INT_MAX__;
+    int found = 0;
+    for(p = proc; p < &proc[NPROC]; p++) {
+      acquire(&p->lock);
+      if(p->state == RUNNABLE && ticks0 > time_to && p->mean_ticks < min_ticks) {
+        pid = p->pid;
+        min_ticks = p->mean_ticks;
+        found = 1;
+      }
+      release(&p->lock);
+    }
+
+    if (found){
+      for(p = proc; p < &proc[NPROC]; p++){
+        acquire(&p->lock);
+        if(p->pid == pid){
+          p->state = RUNNING;
+          c->proc = p;
+          swtch(&c->context, &p->context);
+          acquire(&tickslock);
+          uint ticks1 = ticks;
+          release(&tickslock);
+          p->last_ticks = ticks1 - ticks0;
+          p->mean_ticks = ((10 - rate) * p->mean_ticks + p->last_ticks * rate) / 10;
+          // Process is done running for now.
+          // It should have changed its p->state before coming back.
+          c->proc = 0;
+        }
+        release(&p->lock);
+      }
+    }
+  }
+}
+
+void
+scheduler(void){
+  #ifdef DEFAULT
+  {
+    printf("Elad-1");
+    default_scheduler();
+  }
+  #endif
+  #ifdef FCFS
+  {
+    printf("Elad-2");
+    fcfs_scheduler();
+  }
+  #endif
+  #ifdef SJF
+  {
+    printf("Elad-3");
+    approx_sjf_scheduler();
+  }
+  #endif
+  for(;;){}
 }
 
 // Switch to scheduler.  Must hold only p->lock
@@ -653,4 +780,31 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+int
+pause_system(int seconds){
+  acquire(&tickslock);
+  time_to = ticks + seconds * 20;
+  release(&tickslock);
+  yield();
+  return 0;
+}
+
+int
+kill_system(void){
+  struct proc *p;
+
+  for(p = proc; p < &proc[NPROC]; p++){
+    acquire(&p->lock);
+    if(p->pid > 2){
+      p->killed = 1;
+      if(p->state == SLEEPING){
+        // Wake process from sleep().
+        p->state = RUNNABLE;
+      }
+    }
+    release(&p->lock);
+  }
+  return 0;
 }

@@ -461,7 +461,7 @@ wait(uint64 addr)
 //  - eventually that process transfers control
 //    via swtch back to the scheduler.
 void
-default_scheduler(void)
+rr_scheduler(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
@@ -479,10 +479,13 @@ default_scheduler(void)
         // Switch to chosen process.  It is the process's job
         // to release its lock and then reacquire it
         // before jumping back to us.
+        p->runnable_time += ticks0 - p->start_runnable;
         p->state = RUNNING;
         c->proc = p;
         swtch(&c->context, &p->context);
-
+        acquire(&tickslock);
+        p->running_time += ticks - ticks0;
+        release(&tickslock);
         // Process is done running for now.
         // It should have changed its p->state before coming back.
         c->proc = 0;
@@ -527,9 +530,14 @@ fcfs_scheduler(void){
       for(p = proc; p < &proc[NPROC]; p++){
         acquire(&p->lock);
         if(p->pid == pid){
+          p->runnable_time += ticks0 - p->start_runnable;
           p->state = RUNNING;
           c->proc = p;
           swtch(&c->context, &p->context);
+          
+          acquire(&tickslock);
+          p->running_time += ticks - ticks0;
+          release(&tickslock);
           // Process is done running for now.
           // It should have changed its p->state before coming back.
           c->proc = 0;
@@ -570,12 +578,14 @@ approx_sjf_scheduler(void){
       for(p = proc; p < &proc[NPROC]; p++){
         acquire(&p->lock);
         if(p->pid == pid){
+          p->runnable_time += ticks0 - p->start_runnable;
           p->state = RUNNING;
           c->proc = p;
           swtch(&c->context, &p->context);
           acquire(&tickslock);
           uint ticks1 = ticks;
           release(&tickslock);
+          p->running_time += ticks1 - ticks0;
           p->last_ticks = ticks1 - ticks0;
           p->mean_ticks = ((10 - rate) * p->mean_ticks + p->last_ticks * rate) / 10;
           // Process is done running for now.
@@ -592,19 +602,16 @@ void
 scheduler(void){
   #ifdef DEFAULT
   {
-    printf("Elad-1");
-    default_scheduler();
+    rr_scheduler();
   }
   #endif
   #ifdef FCFS
   {
-    printf("Elad-2");
     fcfs_scheduler();
   }
   #endif
   #ifdef SJF
   {
-    printf("Elad-3");
     approx_sjf_scheduler();
   }
   #endif

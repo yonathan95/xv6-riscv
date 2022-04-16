@@ -808,3 +808,10 @@ kill_system(void){
   }
   return 0;
 }
+
+int
+print_stats(void){
+  printf("hello Elad");
+  //printf("\nProgram time: %d\n Cpu utilization: %f\n", program_time, cpu_utilization);
+  return 0;
+}

@@ -652,7 +652,14 @@ yield(void)
   struct proc *p = myproc();
   acquire(&p->lock);
   p->state = RUNNABLE;
+
+  acquire(&tickslock);
+  uint ticks0 = ticks;
+  release(&tickslock);
+  p->start_runnable = ticks0;
+
   sched();
+
   release(&p->lock);
 }
 
@@ -698,6 +705,12 @@ sleep(void *chan, struct spinlock *lk)
   p->chan = chan;
   p->state = SLEEPING;
 
+  acquire(&tickslock);
+  uint ticks0 = ticks;
+  release(&tickslock);
+
+  p->start_sleep = ticks0;
+
   sched();
 
   // Tidy up.
@@ -720,6 +733,11 @@ wakeup(void *chan)
       acquire(&p->lock);
       if(p->state == SLEEPING && p->chan == chan) {
         p->state = RUNNABLE;
+        acquire(&tickslock);
+        uint ticks0 = ticks;
+        release(&tickslock);
+        p->sleeping_time += ticks0 - p->start_sleep;
+        p->start_runnable = ticks0;
       }
       release(&p->lock);
     }

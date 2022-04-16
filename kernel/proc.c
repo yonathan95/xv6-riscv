@@ -829,6 +829,11 @@ kill_system(void){
       if(p->state == SLEEPING){
         // Wake process from sleep().
         p->state = RUNNABLE;
+        acquire(&tickslock);
+        uint ticks0 = ticks;
+        release(&tickslock);
+        p->sleeping_time += ticks0 - p->start_sleep;
+        p->start_runnable = ticks0;
       }
     }
     release(&p->lock);

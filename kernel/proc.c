@@ -12,6 +12,15 @@ struct proc proc[NPROC];
 
 struct proc *initproc;
 
+uint sleeping_processes_mean = 0;
+uint runnable_processes_mean = 0;
+uint running_processes_mean = 0;
+uint procs_num = 0;
+
+uint program_time = 0;
+uint start_time = 0;
+float cpu_utilization = 0;
+
 int nextpid = 1;
 int rate= 5;
 struct spinlock pid_lock;
@@ -56,6 +65,10 @@ procinit(void)
       initlock(&p->lock, "proc");
       p->kstack = KSTACK((int) (p - proc));
   }
+
+  acquire(&tickslock);
+  start_time = ticks;
+  release(&tickslock);
 }
 
 // Must be called with interrupts disabled,
@@ -169,6 +182,13 @@ freeproc(struct proc *p)
   p->mean_ticks = 0;
   p->last_runnable_time = 0;
   p->last_ticks = 0;
+  p->sleeping_time = 0;
+  p->runnable_time = 0;
+  p->running_time = 0;
+  p->start_sleep = 0;
+  acquire(&tickslock);
+  p->start_runnable = ticks;
+  release(&tickslock);
 }
 
 // Create a user page table for a given process,

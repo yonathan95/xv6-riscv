@@ -42,7 +42,7 @@ void env_freq() {
 int
 main(int argc, char *argv[])
 {
-    env_large();
+    env_freq();
     print_stats();
     exit(0);
     return 0;

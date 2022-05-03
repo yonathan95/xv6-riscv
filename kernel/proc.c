@@ -20,11 +20,141 @@ static void freeproc(struct proc *p);
 
 extern char trampoline[]; // trampoline.S
 
+extern uint64 cas(volatile void *addr, int expected, int newval);
+
 // helps ensure that wakeups of wait()ing
 // parents are not lost. helps obey the
 // memory model when using p->parent.
 // must be acquired before any p->lock.
 struct spinlock wait_lock;
+
+struct head ready_list;
+struct spinlock readylock; 
+struct head unused_list;
+struct spinlock unusedlock;
+struct head sleeping_list;
+struct spinlock sleepinglock;
+struct head zombie_list;
+struct spinlock zombielock;
+
+
+void
+inithead(struct head *head, struct spinlock *lock)
+{
+  head->next = -1;
+  head->lock = *lock;
+}
+
+void
+initiate(void){
+  initlock(&readylock, "ready");
+  inithead(&ready_list, &readylock);
+
+  initlock(&unusedlock, "unused");
+  inithead(&unused_list, &unusedlock);
+
+  initlock(&sleepinglock, "sleeping");
+  inithead(&sleeping_list, &sleepinglock);
+
+  initlock(&zombielock, "zombie");
+  inithead(&zombie_list, &zombielock);
+}
+
+int
+get_index(int pid)
+{
+  struct proc *p;
+  int index = 0;
+  for(p = proc; p < &proc[NPROC]; p++) {
+    if(p->pid == pid){
+      return index;
+    }
+    index += 1;
+  }
+  return -1;
+}
+
+void
+insert(struct head *head, int pid)
+{ 
+  acquire(&head->lock);
+  int index = get_index(pid);
+  
+  if(head->next == -1){
+    head->next = -1;
+    release(&head->lock);
+  }
+
+  else{
+    struct proc *curr;
+    curr = &proc[head->next];
+    release(&head->lock);
+    acquire(&curr->lock);
+    while(curr->next != -1){
+      int tmp = curr->next;
+      release(&curr->lock);
+      curr = &proc[tmp];
+      acquire(&curr->lock);
+    }
+    curr->next = index;
+    release(&curr->lock);
+  }
+}
+
+void
+remove_node(struct head *head, int pid)
+{
+  struct proc *prev;
+  struct proc *curr;
+  acquire(&head->lock);
+
+  if(head->next == -1){
+    return;
+  }
+
+  prev = &proc[head->next];
+  acquire(&prev->lock);
+
+  if(prev->pid == pid){
+    head->next=prev->next;
+    release(&prev->lock);
+    release(&head->lock);
+    return;
+  }
+
+  release(&head->lock);
+
+  if(prev->next == -1){
+    release(&prev->lock);
+    return;
+  }
+
+  curr = &proc[prev->next];
+  acquire(&curr->lock);
+  if(curr->pid == pid){
+    prev->next=curr->next;
+    curr->next = -1;
+    release(&curr->lock);
+    release(&prev->lock);
+    return;
+  }
+
+  while(curr->next != -1){
+    release(&prev->lock);
+    prev = curr;
+    curr = &proc[curr->next];
+    acquire(&curr->lock);
+    if(curr->pid == pid){
+      prev->next=curr->next;
+      curr->next = -1;
+      release(&curr->lock);
+      release(&prev->lock);
+      return;
+    }
+  }
+  release(&curr->lock);
+  release(&prev->lock);
+}
 
 // Allocate a page for each process's kernel stack.
 // Map it high in memory, followed by an invalid
@@ -54,6 +184,7 @@ procinit(void)
       initlock(&p->lock, "proc");
       p->kstack = KSTACK((int) (p - proc));
   }
+  initiate();
 }
 
 // Must be called with interrupts disabled,
@@ -88,11 +219,9 @@ myproc(void) {
 int
 allocpid() {
   int pid;
-  
-  acquire(&pid_lock);
+  do {
   pid = nextpid;
-  nextpid = nextpid + 1;
-  release(&pid_lock);
+  } while(cas(&nextpid, pid, pid + 1));
 
   return pid;
 }

@@ -105,12 +105,4 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
-  uint last_runnable_time;
-  uint mean_ticks;
-  uint last_ticks;
-  uint sleeping_time;
-  uint runnable_time;
-  uint running_time;
-  uint start_sleep;
-  uint start_runnable;
 };

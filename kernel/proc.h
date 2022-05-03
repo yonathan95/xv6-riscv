@@ -112,4 +112,5 @@ struct proc {
 typedef struct head {
   struct spinlock lock;
   int next;
+  char* name;
 } head;

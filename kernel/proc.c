@@ -28,8 +28,9 @@ extern uint64 cas(volatile void *addr, int expected, int newval);
 // must be acquired before any p->lock.
 struct spinlock wait_lock;
 
-struct head ready_list;
-struct spinlock readylock; 
+struct head ready_list[NCPU];
+struct spinlock readylocks[NCPU];
+
 struct head unused_list;
 struct spinlock unusedlock;
 struct head sleeping_list;
@@ -47,8 +48,15 @@ inithead(struct head *head, struct spinlock *lock)
 
 void
 initiate(void){
-  initlock(&readylock, "ready");
-  inithead(&ready_list, &readylock);
+  int i = 0;
+  struct spinlock *lk = readylocks;
+  struct head *head = ready_list;
+  for(; i < NCPU; i++){
+    initlock(lk, "ready");
+    inithead(head, lk);
+    lk++;
+    head++;
+  }
 
   initlock(&unusedlock, "unused");
   inithead(&unused_list, &unusedlock);
@@ -74,14 +82,14 @@ get_index(int pid)
   return -1;
 }
 
-void
+int
 insert(struct head *head, int pid)
 { 
   acquire(&head->lock);
   int index = get_index(pid);
   
   if(head->next == -1){
-    head->next = -1;
+    head->next = pid;
     release(&head->lock);
   }
 
@@ -99,9 +107,10 @@ insert(struct head *head, int pid)
     curr->next = index;
     release(&curr->lock);
   }
+  return 1;
 }
 
-void
+int
 remove_node(struct head *head, int pid)
 {
   struct proc *prev;
@@ -109,7 +118,7 @@ remove_node(struct head *head, int pid)
   acquire(&head->lock);
 
   if(head->next == -1){
-    return;
+    return 0;
   }
 
   prev = &proc[head->next];
@@ -119,14 +128,14 @@ remove_node(struct head *head, int pid)
     head->next=prev->next;
     release(&prev->lock);
     release(&head->lock);
-    return;
+    return 1;
   }
 
   release(&head->lock);
 
   if(prev->next == -1){
     release(&prev->lock);
-    return;
+    return 0;
   }
 
   curr = &proc[prev->next];
@@ -136,7 +145,7 @@ remove_node(struct head *head, int pid)
     curr->next = -1;
     release(&curr->lock);
     release(&prev->lock);
-    return;
+    return 1;
   }
 
   while(curr->next != -1){
@@ -149,11 +158,12 @@ remove_node(struct head *head, int pid)
       curr->next = -1;
       release(&curr->lock);
       release(&prev->lock);
-      return;
+      return 1;
     }
   }
   release(&curr->lock);
   release(&prev->lock);
+  return 0;
 }
 
 // Allocate a page for each process's kernel stack.
@@ -782,4 +792,19 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+int
+set_cpu(int cpu_num){
+  if(insert(&ready_list[cpu_num], myproc()->pid)){
+    yield();
+    return cpu_num;
+  }
+  return -1;
+}
+
+int get_cpu(void){
+  intr_off();
+  int id = cpuid();
+  return id;
 }

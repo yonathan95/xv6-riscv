@@ -24,6 +24,7 @@ struct cpu {
   struct context context;     // swtch() here to enter scheduler().
   int noff;                   // Depth of push_off() nesting.
   int intena;                 // Were interrupts enabled before push_off()?.
+  int id;
 };
 
 extern struct cpu cpus[NCPU];
@@ -105,12 +106,13 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
-  uint64 next;
+  int next;
   int affiliated_cpu;
+  int index;
 };
 
-typedef struct head {
+struct head {
   struct spinlock lock;
   int next;
   char* name;
-} head;
+};

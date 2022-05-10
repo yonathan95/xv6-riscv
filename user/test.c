@@ -10,6 +10,23 @@
 
 int
 main(int argc, char *argv[]){
-    fprintf(2,"%d", 1);
-    return 0;
+    int status;
+    int pid = fork();
+    for(int i = 0; i < 10;i++){
+        kill(pid);
+        pid = fork();
+        sleep(i * 2);
+        fprintf(2,"cpu: %d\n", get_cpu());
+    }
+
+    if (pid != 0){
+        sleep(1);
+        kill(pid);
+    }
+    else{
+        sleep(10);
+    }
+    wait(&status);
+    fprintf(2,"done\n");
+    exit(0);
 }

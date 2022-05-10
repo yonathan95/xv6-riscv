@@ -23,8 +23,7 @@ struct cpu {
   struct proc *proc;          // The process running on this cpu, or null.
   struct context context;     // swtch() here to enter scheduler().
   int noff;                   // Depth of push_off() nesting.
-  int intena;                 // Were interrupts enabled before push_off()?.
-  int id;
+  int intena;                 // Were interrupts enabled before push_off()?
 };
 
 extern struct cpu cpus[NCPU];
@@ -106,13 +105,16 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
-  int next;
+
+  struct spinlock walkLock;    
+  int next;             
   int affiliated_cpu;
-  int index;
+  int index;                
 };
 
-struct head {
-  struct spinlock lock;
-  int next;
-  char* name;
+struct concurrentList {
+  int head;       
+  struct spinlock walkLock;
+  char * name; 
+  uint64 counter;
 };

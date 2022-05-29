@@ -20,6 +20,3 @@
 #define SYS_link   19
 #define SYS_mkdir  20
 #define SYS_close  21
-#define SYS_pause_system  22
-#define SYS_kill_system  23
-#define SYS_print_stats 24

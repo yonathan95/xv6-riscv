@@ -2,14 +2,18 @@
 #include "kernel/stat.h"
 #include "user/user.h"
 
-int
-main(int argc, char *argv[])
+int main(int argc, char *argv[])
 {
-  if(argc != 3){
-    fprintf(2, "Usage: ln old new\n");
+  if (argc != 3 && (argc != 4 || (argc == 4 && !strcmp(argv[2], "-s"))))
+  {
     exit(1);
   }
-  if(link(argv[1], argv[2]) < 0)
-    fprintf(2, "link %s %s: failed\n", argv[1], argv[2]);
-  exit(0);
+  if (argc == 3)
+  {
+    exit(link(argv[1], argv[2]));
+  }
+  else
+  {
+    exit(symlink(argv[2], argv[3]));
+  }
 }
